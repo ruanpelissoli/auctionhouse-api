@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,6 +71,9 @@ app.UseAuthentication();
 
 app.UseHttpsRedirection();
 
+app.MapPost("/register",
+(UserRegister userRegister, IUserService service) => Register(userRegister, service));
+
 app.MapPost("/login",
 (UserLogin user, IUserService service) => Login(user, service))
     .Accepts<UserLogin>("application/json")
@@ -111,7 +115,7 @@ IResult Login(UserLogin user, IUserService service)
             new Claim(ClaimTypes.Email, loggedInUser.EmailAddress),
             new Claim(ClaimTypes.GivenName, loggedInUser.GivenName),
             new Claim(ClaimTypes.Surname, loggedInUser.Surname),
-            new Claim(ClaimTypes.Role, loggedInUser.Role)
+            new Claim(ClaimTypes.Role, loggedInUser.Role ?? "Administrator")
         };
 
         var token = new JwtSecurityToken
@@ -132,6 +136,27 @@ IResult Login(UserLogin user, IUserService service)
     }
     return Results.BadRequest("Invalid user credentials");
 }
+
+IResult Register(UserRegister userRegister, IUserService userService)
+{
+    using var hmac = new HMACSHA512();
+
+    var passwordSalt = hmac.Key;
+    var passwordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(userRegister.Password));
+
+    var user = new User();
+
+    user.Username = userRegister.Username;
+    user.EmailAddress = userRegister.EmailAddress;
+    user.GivenName = userRegister.Name;
+    user.Surname = userRegister.Surname;
+    user.PasswordSalt = passwordSalt;
+    user.PasswordHash = passwordHash;
+
+    userService.Create(user);
+
+    return Results.Ok(user);
+};
 
 app.Run();
 
